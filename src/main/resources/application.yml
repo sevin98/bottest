@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: team3Bot
+
+  # JPA (개발용 H2 - 프로덕션에서는 MySQL 등 사용)
+  datasource:
+    url: jdbc:h2:mem:team3bot
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: none
+  h2:
+    console:
+      enabled: true
+
+server:
+  port: 8080
+
+# Slack
+slack:
+  bot-token: ${SLACK_BOT_TOKEN:}
+  signing-secret: ${SLACK_SIGNING_SECRET:}
+  # Notion DB의 `대상` 값과 동일하게 맞추면 됩니다. 예: Notion의 대상이 `Test`면 SLACK_CHANNEL_MAPPING_TEST 사용
+  channel-mapping:
+    Server: ${SLACK_CHANNEL_MAPPING_SERVER:}
+    Design: ${SLACK_CHANNEL_MAPPING_DESIGN:}
+    Web: ${SLACK_CHANNEL_MAPPING_WEB:}
+    전체: ${SLACK_CHANNEL_MAPPING_전체:}
+    Test: ${SLACK_CHANNEL_MAPPING_TEST:}
+
+# Notion
+notion:
+  api-token: ${NOTION_API_TOKEN:}
+  parent-page-id: ${NOTION_PARENT_PAGE_ID:}
+  meeting-database-id: ${NOTION_MEETING_DATABASE_ID:}
+  property:
+    notes-status: ${NOTION_PROPERTY_NOTES_STATUS:회의록 상태}
+  notify:
+    creation-enabled: ${NOTION_NOTIFY_CREATION_ENABLED:true}
+    creation-window-hours: ${NOTION_NOTIFY_CREATION_WINDOW_HOURS:72}
+
+# 노션 회의 리마인더 + 신규 알림 + 회의록 요약 (DB 스캔 → Slack)
+reminder:
+  enabled: ${REMINDER_ENABLED:true}
+  scan-interval-ms: ${REMINDER_SCAN_INTERVAL_MS:300000}
+  scan-initial-delay-ms: ${REMINDER_SCAN_INITIAL_DELAY_MS:15000}
+  skip-statuses: "${REMINDER_SKIP_STATUSES:미정,취소 및 변경}"
+  timezone: ${REMINDER_TIMEZONE:Asia/Seoul}
+
+notes:
+  summary:
+    enabled: ${NOTES_SUMMARY_ENABLED:true}
+    done-value: ${NOTES_SUMMARY_DONE_VALUE:DONE}
+    delay-after-end-minutes: ${NOTES_SUMMARY_DELAY_AFTER_END_MINUTES:30}
+  meeting-default-duration-minutes: "${NOTES_MEETING_DEFAULT_DURATION_MINUTES:60}"
+
+# OpenAI (없으면 요약 대신 본문 앞부분만 슬랙에 표시)
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+
