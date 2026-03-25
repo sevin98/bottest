@@ -1,0 +1,21 @@
+# 사용법: 이 파일을 deploy.yml 로 복사한 뒤, 배포 대상에 맞게 수정하세요.
+# cp .github/workflows/deploy.example.yml .github/workflows/deploy.yml
+#
+# --- 플랫폼별 요약 ---
+# Railway: 대시보드에서 GitHub 연동만 해도 푸시마다 자동 배포 가능 (이 워크플로 없이도 됨)
+# Render:  동일하게 Git 연동 + Docker 또는 Native build
+# Fly.io:  flyctl deploy + FLY_API_TOKEN 시크릿
+# EC2:    SSH + docker compose pull && up (SSH 키·호스트를 시크릿으로)
+#
+# name: Deploy
+# on:
+#   workflow_run:
+#     workflows: ["CI"]
+#     types: [completed]
+#     branches: [main]
+# jobs:
+#   deploy:
+#     if: ${{ github.event.workflow_run.conclusion == 'success' }}
+#     runs-on: ubuntu-latest
+#     steps:
+#       - run: echo "여기에 railway up / fly deploy / ssh docker pull 등 추가"
