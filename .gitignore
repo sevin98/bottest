@@ -1,0 +1,106 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Local config & secrets (never commit) ###
+application-local.properties
+application-local.yml
+.env
+.env.*
+*.local.properties
+
+# dotenv/direnv
+.envrc
+.direnv/
+
+# Common secret/config file names
+secrets.*
+secret.*
+*secret*
+*secrets*
+credentials.*
+credential.*
+*credential*
+*credentials*
+service-account*.json
+serviceAccount*.json
+firebase-adminsdk*.json
+google-credentials*.json
+gcp-credentials*.json
+aws-credentials*.*
+
+# Private keys / certs / keystores
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.pkcs12
+
+# SSH
+.ssh/
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+known_hosts
+
+# Logs / dumps / temp
+*.log
+logs/
+*.tmp
+*.swp
+*.swo
+*.orig
+*.bak
+*.dump
+*.sql
+*.sqlite
+*.sqlite3
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/runConfigurations/
+.idea/httpRequests/
+.idea/dataSources/
+.idea/dataSources.local.xml
