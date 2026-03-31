@@ -34,6 +34,8 @@ dependencies {
     implementation 'com.slack.api:bolt-jakarta-servlet:1.48.0'
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    // Source: https://mvnrepository.com/artifact/net.sourceforge.tess4j/tess4j
+    implementation 'net.sourceforge.tess4j:tess4j:5.18.0'
     compileOnly 'org.projectlombok:lombok'
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     runtimeOnly 'com.mysql:mysql-connector-j'
@@ -47,4 +49,31 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// eng + kor for local OCR (tess4j). Files go to ./tessdata (not committed).
+tasks.register('downloadTessdata') {
+    group = 'setup'
+    description = 'Downloads eng.traineddata and kor.traineddata into ./tessdata'
+    def tessDir = layout.projectDirectory.dir('tessdata')
+    outputs.dir(tessDir)
+    doLast {
+        tessDir.asFile.mkdirs()
+        def base = 'https://github.com/tesseract-ocr/tessdata/raw/main/'
+        ['eng.traineddata', 'kor.traineddata'].each { name ->
+            def dest = tessDir.file(name).asFile
+            if (dest.exists() && dest.length() > 0) {
+                println "tessdata: skip (exists) $name"
+                return
+            }
+            println "tessdata: downloading $name ..."
+            java.net.URI.create(base + name).toURL().openStream().withCloseable { input ->
+                dest.withOutputStream { output -> output << input }
+            }
+        }
+    }
+}
+
+tasks.named('bootRun') {
+    dependsOn 'downloadTessdata'
 }

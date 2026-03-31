@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OCR · 소비 환산</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4d;
+      --text: #e7ecf3;
+      --muted: #8b9bb4;
+      --accent: #5b9fd4;
+      --warn: #e8a838;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      padding: 0.85rem 1rem 1rem;
+      max-width: 72rem;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .page-header { margin-bottom: 0.65rem; }
+    h1 { font-size: 1.05rem; font-weight: 650; margin: 0; }
+    p.hint { color: var(--muted); font-size: 0.875rem; margin: 0; line-height: 1.5; }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    @media (min-width: 960px) {
+      .layout {
+        grid-template-columns: 1fr 1fr;
+        gap: 1.1rem;
+      }
+      .col {
+        max-height: calc(100vh - 3.5rem);
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 0.35rem;
+        scrollbar-gutter: stable;
+      }
+      .col-right {
+        border-left: 1px solid var(--border);
+        padding-left: 1.1rem;
+      }
+    }
+    .col > .section-title:first-child { margin-top: 0; }
+    .drop {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 1.5rem 1.25rem;
+      text-align: center;
+      background: var(--panel);
+      margin-bottom: 1rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .drop.dragover { border-color: var(--accent); background: #1f2d42; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1rem; }
+    button, label.file {
+      background: var(--accent);
+      color: #0a0e14;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    button.primary, label.file {
+      background: linear-gradient(180deg, #6fb4ef, var(--accent));
+      box-shadow: 0 8px 18px rgba(91, 159, 212, 0.18);
+    }
+    button.primary:hover:not(:disabled), label.file:hover {
+      filter: brightness(1.03);
+    }
+    button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+    button.btn-sm { padding: 0.3rem 0.55rem; font-size: 0.75rem; font-weight: 600; }
+    label.file input { display: none; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    pre {
+      margin: 0;
+      padding: 0.85rem;
+      border-radius: 12px;
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      font-size: 0.78rem;
+      line-height: 1.45;
+      overflow: auto;
+      max-height: min(28vh, 220px);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    @media (min-width: 960px) {
+      pre { max-height: min(32vh, 260px); }
+    }
+    .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 1rem 0 0.35rem; }
+    .pre-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin: 1rem 0 0.35rem;
+    }
+    .pre-head .section-title { margin: 0; flex: 1; min-width: 0; }
+    details.fold {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 0.35rem 0.65rem;
+      margin-top: 0.75rem;
+    }
+    details.fold > summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      user-select: none;
+      padding: 0.25rem 0;
+    }
+    details.fold > summary::-webkit-details-marker { display: none; }
+    details.fold[open] { padding-bottom: 0.65rem; }
+    .fold-body { margin-top: 0.5rem; }
+    .preview { max-width: 100%; max-height: min(36vh, 280px); width: auto; display: block; border-radius: 8px; margin-top: 0.5rem; border: 1px solid var(--border); object-fit: contain; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.75rem 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .card p { margin: 0.35rem 0; font-size: 0.9rem; }
+    .card .muted { color: var(--muted); font-size: 0.8rem; }
+    label.field { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      max-width: 100%;
+      padding: 0.5rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0a0e14;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+    th, td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 0.7rem; text-transform: uppercase; }
+    .nudge { color: var(--warn); font-size: 0.9rem; margin-top: 0.75rem; line-height: 1.45; }
+    .unit-btn-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.45rem;
+    }
+    button.unit-btn {
+      width: auto;
+      text-align: center;
+      background: #101824;
+      color: #dfeaf7;
+      border: 1px solid rgba(91, 159, 212, 0.55);
+      font-weight: 650;
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+    }
+    button.unit-btn:hover:not(:disabled) { border-color: var(--accent); background: rgba(91, 159, 212, 0.18); }
+    button.unit-btn:active:not(:disabled) { transform: translateY(1px); }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <h1>OCR + 소비 환산 (실험)</h1>
+  </header>
+
+  <div class="layout">
+    <div class="col col-left">
+      <div class="section-title">이미지 · OCR</div>
+      <div id="drop" class="drop" tabindex="0">
+        드래그·드롭 또는 클릭해서 파일 선택
+      </div>
+      <div class="row">
+        <label class="file"><input type="file" id="picker" accept="image/*" /> 파일 선택</label>
+        <button type="button" class="primary" id="run" disabled>OCR 실행</button>
+        <span id="status" class="hint" style="margin:0"></span>
+      </div>
+
+      <details class="fold" id="foldLeftDetails" open>
+        <summary>
+          <span class="section-title" style="margin:0">미리보기 · 요약</span>
+          <span class="muted" style="font-size:0.8rem">접기</span>
+        </summary>
+        <div class="fold-body">
+          <img id="preview" class="preview" alt="" style="display:none" />
+          <div id="summary" class="card" style="display:none; margin-top:0.65rem">
+            <p><strong>상품(추정)</strong> <span id="sumProduct">—</span></p>
+            <p><strong>가격(추정)</strong> <span id="sumPrice">—</span> 원</p>
+            <p style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0">
+              <strong>처리시간</strong> <span id="sumMs">—</span> ms
+              <button type="button" class="secondary btn-sm" id="toggleGemini" style="margin-left:auto;font-size:0.75rem;padding:2px 10px">Gemini 상세 ▾</button>
+            </p>
+            <div id="geminiDetail" style="display:none;margin-top:0.6rem;border-top:1px solid var(--border);padding-top:0.6rem">
+              <p><strong>Gemini 모델</strong> <span id="sumGeminiModel">—</span></p>
+              <p><strong>Gemini 입력</strong> <span id="sumGeminiIn" style="font-size:0.8rem;color:var(--muted);word-break:break-all">—</span></p>
+              <p style="margin-bottom:0"><strong>Gemini 출력</strong> <span id="sumGeminiOut">—</span></p>
+            </div>
+            <p class="muted" id="sumHint" style="margin-top:0.5rem"></p>
+          </div>
+        </div>
+      </details>
+
+      <details class="fold" id="foldOcrJson">
+        <summary>
+          <span class="section-title" style="margin:0">JSON (OCR 전체)</span>
+          <span class="muted" style="font-size:0.8rem">펼치기</span>
+        </summary>
+        <div class="fold-body">
+          <div class="row" style="margin:0 0 0.5rem">
+            <button type="button" class="secondary btn-sm" id="copyOcrJson">복사</button>
+          </div>
+          <pre id="out">(아직 없음)</pre>
+        </div>
+      </details>
+    </div>
+
+    <div class="col col-right">
+      <div class="section-title">금액 · 비교 기준</div>
+      <div class="card">
+        <label class="field" for="manualProduct">상품명 (선택, 문구에 씀)</label>
+        <input type="text" id="manualProduct" placeholder="예: 구매한 상품 이름" />
+        <label class="field" for="priceWon" style="margin-top:0.75rem">금액 (원)</label>
+        <input type="text" id="priceWon" inputmode="numeric" autocomplete="off" placeholder="예: 3,385,300" />
+
+        <p class="field" style="margin-top:0.85rem;margin-bottom:0">뭐로 환산할까요?</p>
+        <div id="unitChoices" class="unit-btn-wrap" aria-live="polite">불러오는 중…</div>
+      </div>
+
+      <div class="section-title">환산 결과</div>
+      <div id="compressHuman" class="card" style="display:none">
+        <p class="muted" id="compressHead"></p>
+        <table id="compressTable">
+          <thead>
+            <tr><th>기준</th><th>단가</th><th>환산</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="nudge" id="compressNudge"></p>
+      </div>
+
+      <details class="fold" id="foldCompressJson">
+        <summary>
+          <span class="section-title" style="margin:0">JSON (환산 API)</span>
+          <span class="muted" style="font-size:0.8rem">펼치기</span>
+        </summary>
+        <div class="fold-body">
+          <div class="row" style="margin:0 0 0.5rem">
+            <button type="button" class="secondary btn-sm" id="copyCompressJson">복사</button>
+          </div>
+          <pre id="compressJson">(환산 전)</pre>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <script>
+    const drop = document.getElementById('drop');
+    const picker = document.getElementById('picker');
+    const runBtn = document.getElementById('run');
+    const out = document.getElementById('out');
+    const statusEl = document.getElementById('status');
+    const preview = document.getElementById('preview');
+    const summary = document.getElementById('summary');
+    const sumProduct = document.getElementById('sumProduct');
+    const sumPrice = document.getElementById('sumPrice');
+    const sumMs = document.getElementById('sumMs');
+    const sumGeminiModel = document.getElementById('sumGeminiModel');
+    const sumGeminiIn = document.getElementById('sumGeminiIn');
+    const sumGeminiOut = document.getElementById('sumGeminiOut');
+    const sumHint = document.getElementById('sumHint');
+    const manualProduct = document.getElementById('manualProduct');
+    const priceWon = document.getElementById('priceWon');
+    const compressHuman = document.getElementById('compressHuman');
+    const compressHead = document.getElementById('compressHead');
+    const compressTable = document.getElementById('compressTable').querySelector('tbody');
+    const compressNudge = document.getElementById('compressNudge');
+    const compressJson = document.getElementById('compressJson');
+    const unitChoices = document.getElementById('unitChoices');
+    const copyOcrJsonBtn = document.getElementById('copyOcrJson');
+    const copyCompressJsonBtn = document.getElementById('copyCompressJson');
+
+    let currentFile = null;
+
+    async function copyPreToClipboard(preEl, btn) {
+      const text = preEl ? preEl.textContent : '';
+      const label = btn.textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = '복사됨';
+        setTimeout(() => { btn.textContent = label; }, 1400);
+      } catch (err) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          btn.textContent = '복사됨';
+          setTimeout(() => { btn.textContent = label; }, 1400);
+        } catch (e2) {
+          btn.textContent = '실패';
+          setTimeout(() => { btn.textContent = label; }, 1400);
+        }
+      }
+    }
+
+    copyOcrJsonBtn.addEventListener('click', () => copyPreToClipboard(out, copyOcrJsonBtn));
+    copyCompressJsonBtn.addEventListener('click', () => copyPreToClipboard(compressJson, copyCompressJsonBtn));
+
+    // details summary label toggle (optional UX polish)
+    function syncFoldSummaryText(detailsEl) {
+      if (!detailsEl) return;
+      const hint = detailsEl.querySelector('summary .muted');
+      if (!hint) return;
+      hint.textContent = detailsEl.open ? '접기' : '펼치기';
+    }
+    const foldOcrJson = document.getElementById('foldOcrJson');
+    const foldCompressJson = document.getElementById('foldCompressJson');
+    const foldLeftDetails = document.getElementById('foldLeftDetails');
+    [foldOcrJson, foldCompressJson, foldLeftDetails].forEach((d) => {
+      if (!d) return;
+      syncFoldSummaryText(d);
+      d.addEventListener('toggle', () => syncFoldSummaryText(d));
+    });
+
+    function priceWonDigitsOnly() {
+      return String(priceWon.value || '').replace(/[^\d]/g, '');
+    }
+
+    function priceWonAmount() {
+      const d = priceWonDigitsOnly();
+      if (!d) return 0;
+      const n = Number(d);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    function formatPriceWonField() {
+      const d = priceWonDigitsOnly();
+      if (!d) {
+        priceWon.value = '';
+        return;
+      }
+      const n = Number(d);
+      if (!Number.isFinite(n) || n <= 0) {
+        priceWon.value = d;
+        return;
+      }
+      priceWon.value = n.toLocaleString('ko-KR');
+    }
+
+    function updateUnitButtonsState() {
+      const ok = priceWonAmount() > 0;
+      unitChoices.querySelectorAll('button.unit-btn').forEach((b) => { b.disabled = !ok; });
+    }
+
+    function formatWon(n) {
+      if (n == null || n === '') return '—';
+      return Number(n).toLocaleString('ko-KR');
+    }
+
+    function setPreview(file) {
+      if (!file) {
+        preview.style.display = 'none';
+        preview.src = '';
+        return;
+      }
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = 'block';
+    }
+
+    function setFile(file) {
+      if (!file || !file.type.startsWith('image/')) {
+        statusEl.textContent = '이미지 파일만 가능합니다.';
+        return;
+      }
+      currentFile = file;
+      runBtn.disabled = false;
+      updateUnitButtonsState();
+      statusEl.textContent = file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
+      setPreview(file);
+    }
+
+    function applyExtraction(ext) {
+      summary.style.display = 'block';
+      sumProduct.textContent = ext && ext.productName ? ext.productName : '—';
+      sumPrice.textContent = ext && ext.priceWon != null ? formatWon(ext.priceWon) : '—';
+      sumHint.textContent = (ext && ext.hint) ? ext.hint : '';
+      if (ext && ext.productName) manualProduct.value = ext.productName;
+      if (ext && ext.priceWon != null) {
+        priceWon.value = Number(ext.priceWon).toLocaleString('ko-KR');
+      }
+      const g = ext && ext.gemini ? ext.gemini : null;
+      if (g && g.enabled) {
+        sumGeminiModel.textContent = g.model || '—';
+        sumGeminiIn.textContent = g.inputTextPreview
+            ? String(g.inputTextPreview).substring(0, 60) + (g.inputTextPreview.length > 60 ? '…' : '')
+            : (g.inputTitle || '—');
+        const outTitle = (g.outputTitle && String(g.outputTitle).trim()) ? g.outputTitle : '—';
+        const outPrice = (g.outputPriceWon && g.outputPriceWon > 0)
+            ? ' / ' + Number(g.outputPriceWon).toLocaleString('ko-KR') + '원' : '';
+        const conf = (g.confidence != null) ? (' (conf ' + Number(g.confidence).toFixed(2) + ')') : '';
+        const applied = g.applied ? ' ✔' : '';
+        const note = g.note ? (' · ' + g.note) : '';
+        sumGeminiOut.textContent = outTitle + outPrice + conf + applied + note;
+      } else {
+        sumGeminiModel.textContent = '—';
+        sumGeminiIn.textContent = '—';
+        sumGeminiOut.textContent = '—';
+      }
+      updateUnitButtonsState();
+    }
+
+    document.getElementById('toggleGemini').addEventListener('click', () => {
+      const d = document.getElementById('geminiDetail');
+      const btn = document.getElementById('toggleGemini');
+      const open = d.style.display !== 'none';
+      d.style.display = open ? 'none' : 'block';
+      btn.textContent = open ? 'Gemini 상세 ▾' : 'Gemini 상세 ▴';
+    });
+
+    drop.addEventListener('click', () => picker.click());
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('dragover'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('dragover');
+      const f = e.dataTransfer.files?.[0];
+      if (f) setFile(f);
+    });
+    picker.addEventListener('change', () => {
+      const f = picker.files?.[0];
+      if (f) setFile(f);
+    });
+
+    document.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const f = item.getAsFile();
+          if (f) setFile(f);
+          return;
+        }
+      }
+    });
+
+    async function runMultipart(file) {
+      const fd = new FormData();
+      fd.append('image', file, file.name || 'paste.png');
+      const res = await fetch('/ocr/api', { method: 'POST', body: fd });
+      return res.json();
+    }
+
+    priceWon.addEventListener('input', updateUnitButtonsState);
+    priceWon.addEventListener('blur', () => {
+      formatPriceWonField();
+      updateUnitButtonsState();
+    });
+
+    function renderCompressResult(data) {
+      compressJson.textContent = JSON.stringify(data, null, 2);
+      if (!data.ok) {
+        compressHuman.style.display = 'none';
+        return;
+      }
+      compressHuman.style.display = 'block';
+      const name = data.productName || manualProduct.value || '이 구매';
+      compressHead.textContent = formatWon(data.priceWon) + '원 · ' + name;
+      compressTable.innerHTML = '';
+      const rows = data.comparisons || [];
+      let firstLine = '';
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        const unit = row.unitPriceWon.toLocaleString('ko-KR');
+        const cnt = row.equivalentCount;
+        const cntStr = Number.isInteger(cnt) ? String(cnt) : cnt.toFixed(1);
+        tr.innerHTML = '<td>' + escapeHtml(row.label) + '</td><td>' + unit + '원</td><td><strong>' + cntStr + '</strong>개·잔 등</td>';
+        compressTable.appendChild(tr);
+        if (!firstLine && row.label.includes('아메리카노')) {
+          firstLine = row.label + ' ' + cntStr + '잔';
+        }
+      }
+      if (!firstLine && rows.length) {
+        firstLine = rows[0].label + ' ' + (Number.isInteger(rows[0].equivalentCount) ? rows[0].equivalentCount : rows[0].equivalentCount.toFixed(1));
+      }
+      compressNudge.textContent = firstLine
+        ? '이 금액이면 ' + firstLine + ' 정도인데, 정말 사시게요? (위시·목표와 한번 더 비교해 보세요.)'
+        : '위 표를 참고해 소비를 한 번 더 떠올려 보세요.';
+    }
+
+    async function compressWithUnitIds(selectedUnitIds) {
+      const p = priceWonAmount();
+      if (!p || p <= 0) {
+        compressJson.textContent = JSON.stringify({ ok: false, error: '금액(원)을 먼저 입력하세요.' }, null, 2);
+        compressHuman.style.display = 'none';
+        return;
+      }
+      compressJson.textContent = '요청 중…';
+      try {
+        const body = {
+          priceWon: p,
+          productName: manualProduct.value || null,
+          selectedUnitIds: selectedUnitIds,
+        };
+        const res = await fetch('/ocr/api/compress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        renderCompressResult(data);
+      } catch (err) {
+        compressJson.textContent = JSON.stringify({ ok: false, error: String(err) }, null, 2);
+        compressHuman.style.display = 'none';
+      }
+    }
+
+    async function loadUnitChoices() {
+      unitChoices.textContent = '불러오는 중…';
+      try {
+        const res = await fetch('/ocr/api/units');
+        const data = await res.json();
+        const units = data.units || [];
+        unitChoices.innerHTML = '';
+        if (units.length === 0) {
+          unitChoices.textContent = '환산 기준이 설정에 없습니다. application.yml 의 ocr.spend-conversion.units 를 확인하세요.';
+          updateUnitButtonsState();
+          return;
+        }
+        units.forEach((u) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'unit-btn';
+          btn.value = String(u.id);
+          btn.textContent = u.label;
+          btn.title = Number(u.unitPriceWon).toLocaleString('ko-KR') + '원/단위';
+          btn.addEventListener('click', () => compressWithUnitIds([String(u.id)]));
+          unitChoices.appendChild(btn);
+        });
+      } catch (e) {
+        unitChoices.textContent = '목록을 불러오지 못했습니다: ' + e;
+      }
+      updateUnitButtonsState();
+    }
+
+    loadUnitChoices();
+
+    runBtn.addEventListener('click', async () => {
+      if (!currentFile) return;
+      runBtn.disabled = true;
+      out.textContent = '처리 중…';
+      statusEl.textContent = 'OCR 실행 중…';
+      try {
+        const data = await runMultipart(currentFile);
+        out.textContent = JSON.stringify(data, null, 2);
+        statusEl.textContent = data.ok ? '완료 (' + data.processingMs + ' ms)' : '실패: ' + (data.error || '');
+        if (data.ok && data.extractedPurchase) {
+          sumMs.textContent = (data.processingMs != null) ? String(data.processingMs) : '—';
+          applyExtraction(data.extractedPurchase);
+        } else {
+          sumMs.textContent = '—';
+          summary.style.display = 'none';
+        }
+        updateUnitButtonsState();
+      } catch (err) {
+        out.textContent = JSON.stringify({ ok: false, error: String(err) }, null, 2);
+        statusEl.textContent = '요청 오류';
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    window.focus();
+  </script>
+</body>
+</html>

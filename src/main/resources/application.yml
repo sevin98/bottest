@@ -2,6 +2,11 @@ spring:
   application:
     name: team3Bot
 
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
   # JPA (개발용 H2 - 프로덕션에서는 MySQL 등 사용)
   datasource:
     url: jdbc:h2:mem:team3bot
@@ -61,3 +66,75 @@ openai:
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-4o-mini}
 
+# 로컬 OCR: 기본은 프로젝트 루트 ./tessdata (kor+eng). ./gradlew bootRun 시 자동 다운로드.
+# IDE에서만 실행할 때: 한 번 ./gradlew downloadTessdata 또는 OCR_DATA_PATH 지정
+ocr:
+  enabled: ${OCR_ENABLED:true}
+  data-path: ${OCR_DATA_PATH:}
+  language: ${OCR_LANGUAGE:kor+eng}
+  auto-download-trained-data: ${OCR_AUTO_DOWNLOAD_TESSDATA:true}
+  # 상품명/가격 OCR 휴리스틱 (테스트용 — 토글·단어 목록 조정 가능)
+  purchase-parse:
+    name-ignore-tokens:
+      - new
+      - sale
+      - best
+      - hot
+      - event
+    treat-won-suffix-as-price-line: true
+    treat-won-symbol-prefix-as-price-line: true
+    # 상품명 후보 줄 제외: 배송·적립·간편결제 등 공통 UI 문구만 (특정 몰 상표명 없음).
+    # true면 줄에서 공백 제거 후 매칭(OCR 음절 사이 공백 대응).
+    name-line-noise-match-collapsed: true
+    name-line-noise-regexes:
+      - ".*도착.*보장.*"
+      - ".*무료.*배송.*"
+      - ".*(오늘|내일|당일|익일).{0,12}(배송|출고|도착).*"
+      - ".*캐시.*적립.*"
+      - ".*적립.*최대.*"
+      - "(?i).*applecare.*"
+      - ".*서울.*경기.*(주문|도착|기준).*"
+      - ".*상품평.*[0-9].*"
+      - ".*한달.*구매.*"
+      # 간편결제·지갑·카드/계좌 안내 줄 (브랜드 없이 흔한 결제 카피)
+      - ".*간편한?결제.*"
+      - ".*(에서도)?간편한?결제.*"
+      - ".*페이머니.*"
+      - ".*@.*페이머니.*"
+      - ".*(카드계좌|계좌이제).*"
+      - ".*머니.{0,6}(카드|계좌).*"
+      - ".*브랜드샵.*"
+    # 메뉴/카테고리/로그인 등 '페이지 UI' 줄을 상품명으로 뽑지 않도록 (공백 제거 후 포함 검사)
+    name-line-ui-keywords:
+      - 로그인
+      - 카테고리
+      - 마이쇼핑
+      - 상품명또는브랜드
+      - 브랜드입력
+      - 베스트
+      - 슈퍼적립
+      - 쇼핑라이브
+      - 지금배달
+      - 선물샵
+      - 패션타운
+      - 푸드윈도
+      - 기획전
+      - 오늘끝딜
+    name-line-ui-keyword-min-hits: 3
+  spend-conversion:
+    units:
+      - label: 스타벅스 아메리카노
+        unit-price-won: 4500
+      - label: 햄버거 세트
+        unit-price-won: 8000
+      - label: 편의점 커피
+        unit-price-won: 2000
+      - label: 두쫀쿠(1봉)
+        unit-price-won: 6500
+
+gemini:
+  # .env 에 GEMINI_API_KEY만 넣으면 자동으로 보정이 켜집니다.
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-2.5-flash}
+  timeout-ms: ${GEMINI_TIMEOUT_MS:20000}
+  min-confidence: ${GEMINI_MIN_CONFIDENCE:0.50}

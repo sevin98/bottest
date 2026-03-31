@@ -36,6 +36,9 @@ out/
 ### VS Code ###
 .vscode/
 
+# Tesseract OCR trained data (run: ./gradlew downloadTessdata)
+tessdata/*.traineddata
+
 ### Local config & secrets (never commit) ###
 application-local.properties
 application-local.yml
