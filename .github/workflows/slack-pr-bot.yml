@@ -1,21 +1,162 @@
-name: Slack PR Bot Test
+name: Slack PR Bot
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, ready_for_review, review_requested, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
-  test-slack:
+  notify-slack:
     runs-on: ubuntu-latest
-    environment: SLACK_BOT_TOKEN
+    environment: your-env-name
 
     steps:
-      - name: Send test message to Slack
+      - name: Extract PR data
+        id: pr
+        shell: bash
         run: |
-          curl -X POST https://slack.com/api/chat.postMessage \
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          ACTION="${{ github.event.action }}"
+          MERGED="${{ github.event.pull_request.merged }}"
+          IS_DRAFT="${{ github.event.pull_request.draft }}"
+
+          PR_BODY=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
+
+          ISSUE=$(echo "$PR_BODY" | grep -oE '#[0-9]+' | head -n 1 || true)
+          if [ -z "$ISSUE" ]; then ISSUE="없음"; fi
+
+          REVIEWERS=$(jq -r '[.pull_request.requested_reviewers[]?.login] | join(", ")' "$GITHUB_EVENT_PATH")
+          if [ -z "$REVIEWERS" ]; then REVIEWERS="없음"; fi
+
+          SUMMARY=$(echo "$PR_BODY" | sed '/^\s*$/d' | head -n 1)
+          if [ -z "$SUMMARY" ]; then SUMMARY="요약 없음"; fi
+
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "pr_title<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "author=$AUTHOR" >> $GITHUB_OUTPUT
+          echo "action=$ACTION" >> $GITHUB_OUTPUT
+          echo "merged=$MERGED" >> $GITHUB_OUTPUT
+          echo "is_draft=$IS_DRAFT" >> $GITHUB_OUTPUT
+          echo "issue=$ISSUE" >> $GITHUB_OUTPUT
+
+          echo "reviewers<<EOF" >> $GITHUB_OUTPUT
+          echo "$REVIEWERS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "summary<<EOF" >> $GITHUB_OUTPUT
+          echo "$SUMMARY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Find existing Slack ts from PR comments
+        id: find_ts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          COMMENTS=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ steps.pr.outputs.pr_number }}/comments")
+
+          BODY=$(echo "$COMMENTS" | jq -r '.[] | select(.body | contains("slack-pr-bot")) | .body' | tail -n 1)
+
+          TS=$(echo "$BODY" | sed -n 's/.*"ts":"\([^"]*\)".*/\1/p')
+          CHANNEL=$(echo "$BODY" | sed -n 's/.*"channel":"\([^"]*\)".*/\1/p')
+
+          echo "ts=$TS" >> $GITHUB_OUTPUT
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+
+      - name: Post parent message on opened
+        if: github.event.action == 'opened' && steps.find_ts.outputs.ts == ''
+        id: post_parent
+        shell: bash
+        run: |
+          TEXT=$(cat <<EOF
+          [PR] #${{ steps.pr.outputs.pr_number }} ${{ steps.pr.outputs.pr_title }}
+          연결된 이슈: ${{ steps.pr.outputs.issue }}
+          PR 작성자: ${{ steps.pr.outputs.author }}
+          리뷰어: ${{ steps.pr.outputs.reviewers }}
+          요약: ${{ steps.pr.outputs.summary }}
+          링크: ${{ steps.pr.outputs.pr_url }}
+          EOF
+          )
+  
+          RESP=$(curl -s -X POST https://slack.com/api/chat.postMessage \
+          -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
+          -H "Content-Type: application/json; charset=utf-8" \
+          --data "$(jq -n \
+          --arg channel "${{ secrets.SLACK_CHANNEL_ID }}" \
+          --arg text "$TEXT" \
+          '{channel:$channel,text:$text}')")
+  
+          echo "$RESP"
+  
+          OK=$(echo "$RESP" | jq -r '.ok')
+          if [ "$OK" != "true" ]; then
+          echo "Slack post failed"
+          exit 1
+          fi
+  
+          TS=$(echo "$RESP" | jq -r '.ts')
+          echo "ts=$TS" >> $GITHUB_OUTPUT
+
+          - name: Save Slack ts into PR comment
+            if: github.event.action == 'opened' && steps.find_ts.outputs.ts == ''
+            env:
+              GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            shell: bash
+            run: |
+            BODY="<!-- slack-pr-bot: {\"channel\":\"${{ secrets.SLACK_CHANNEL_ID }}\",\"ts\":\"${{ steps.post_parent.outputs.ts }}\"} -->"
+    
+            curl -s -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ steps.pr.outputs.pr_number }}/comments" \
+              -d "$(jq -n --arg body "$BODY" '{body:$body}')"
+
+          - name: Reply to thread
+            if: github.event.action != 'opened'
+            shell: bash
+            run: |
+            THREAD_TS="${{ steps.find_ts.outputs.ts }}"
+            CHANNEL_ID="${{ steps.find_ts.outputs.channel }}"
+            ACTION="${{ steps.pr.outputs.action }}"
+            MERGED="${{ steps.pr.outputs.merged }}"
+    
+            if [ -z "$THREAD_TS" ]; then
+            echo "No thread ts found. Skip."
+            exit 0
+            fi
+    
+            TEXT=""
+    
+            if [ "$ACTION" = "ready_for_review" ]; then
+            TEXT="👀 Draft 해제됨. 리뷰 가능한 상태입니다."
+            elif [ "$ACTION" = "review_requested" ]; then
+            TEXT="🙋 리뷰 요청됨: ${{ steps.pr.outputs.reviewers }}"
+            elif [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
+            TEXT="✅ PR이 머지되었습니다."
+            else
+              echo "No message needed."
+              exit 0
+              fi
+    
+          curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --data '{
-              "channel": "'${{ secrets.SLACK_CHANNEL_ID }}'",
-              "text": "PR opened 테스트 메시지"
-            }'
+            -H "Content-Type: application/json; charset=utf-8" \
+            --data "$(jq -n \
+              --arg channel "$CHANNEL_ID" \
+              --arg text "$TEXT" \
+              --arg thread_ts "$THREAD_TS" \
+              '{channel:$channel,text:$text,thread_ts:$thread_ts,reply_broadcast:false}')"
