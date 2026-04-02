@@ -4,7 +4,7 @@ public class ComparisonRow {
 
     private String label;
     private long unitPriceWon;
-    /** 예: 아메리카노 207.6잔 */
+
     private double equivalentCount;
 
     public ComparisonRow() {}
