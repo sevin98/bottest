@@ -369,9 +369,9 @@ jobs:
           📝 작업 요약
           $SUMMARY
 
-          👤 작성자: ${{ steps.pr.outputs.author }}
-          🌿 브랜치: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
-          👀 리뷰어: $REVIEWER_TEXT
+          Author: ${{ steps.pr.outputs.author }}
+          Branch: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
+          Reviewer: $REVIEWER_TEXT
           EOF
           )
 
