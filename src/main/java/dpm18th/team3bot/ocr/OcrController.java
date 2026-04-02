@@ -73,9 +73,9 @@ public class OcrController {
     @PostMapping(value = "/api", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public OcrResponse recognizeJson(@RequestBody OcrBase64Request body) throws JsonProcessingException {
         if (body == null || body.getImageBase64() == null || body.getImageBase64().isBlank()) {
-            OcrResponse res = OcrResponse.failure("imageBase64 is required");
-            logJson(res);
-            return res;
+            OcrResponse response = OcrResponse.failure("imageBase64 is required");
+            logJson(response);
+            return response;
         }
         try {
             byte[] bytes = decodeBase64Image(body.getImageBase64());
