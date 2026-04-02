@@ -12,7 +12,7 @@ permissions:
 jobs:
   notify-slack:
     runs-on: ubuntu-latest
-    environment: your-env-name
+    environment: SLACK_BOT_TOKEN
 
     steps:
       - name: Extract PR data
