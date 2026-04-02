@@ -19,6 +19,7 @@ jobs:
   notify-slack:
     runs-on: ubuntu-latest
     environment: SLACK_BOT_TOKEN
+
     env:
       SLACK_USER_MAP: '{"m-a-king":"U0AKAEF2K9U","1o18z":"U0AKQ6G8BT3","sevin98":"U0AK6U2J62F"}'
 
@@ -37,12 +38,9 @@ jobs:
           BASE_REF="${{ github.event.pull_request.base.ref }}"
           HEAD_REF="${{ github.event.pull_request.head.ref }}"
 
+          PR_BODY=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
+
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-
-          echo "pr_title<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$PR_TITLE" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
           echo "author=$AUTHOR" >> "$GITHUB_OUTPUT"
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"
@@ -51,11 +49,18 @@ jobs:
           echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
 
-      - name: Find existing Slack ts from PR comments
+          echo "pr_title<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$PR_TITLE" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          echo "pr_body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$PR_BODY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing Slack ts
         id: find_ts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
           COMMENTS=$(curl -s \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -78,199 +83,122 @@ jobs:
             github.event.action == 'ready_for_review'
           )
         id: post_parent
-        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mention_slack_user() {
-            local github_id="$1"
-            local slack_id
-            slack_id=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$github_id" '.[$id] // empty')
-
-            if [ -n "$slack_id" ]; then
-              echo "<@$slack_id>"
-            else
-              echo "@$github_id"
-            fi
+          mention() {
+            id="$1"
+            sid=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$id" '.[$id] // empty')
+            if [ -n "$sid" ]; then echo "<@$sid>"; else echo "@$id"; fi
           }
 
-          REVIEWERS=$(jq -r '.pull_request.requested_reviewers[]?.login' "$GITHUB_EVENT_PATH")
+          reviewers=$(jq -r '.pull_request.requested_reviewers[]?.login' "$GITHUB_EVENT_PATH")
 
-          REVIEWER_TEXT=""
-          if [ -z "$REVIEWERS" ]; then
-            REVIEWER_TEXT="없음"
+          if [ -z "$reviewers" ]; then
+            reviewer_text="없음"
           else
-            while IFS= read -r reviewer; do
-              [ -z "$reviewer" ] && continue
-              USER_MENTION=$(mention_slack_user "$reviewer")
-              if [ -z "$REVIEWER_TEXT" ]; then
-                REVIEWER_TEXT="$USER_MENTION"
+            reviewer_text=""
+            while read r; do
+              [ -z "$r" ] && continue
+              m=$(mention "$r")
+              if [ -z "$reviewer_text" ]; then
+                reviewer_text="$m"
               else
-                REVIEWER_TEXT="$REVIEWER_TEXT, $USER_MENTION"
+                reviewer_text="$reviewer_text, $m"
               fi
-            done <<< "$REVIEWERS"
+            done <<< "$reviewers"
           fi
 
-          TEXT=$(cat <<EOF
-          [PR] #${{ steps.pr.outputs.pr_number }} ${{ steps.pr.outputs.pr_title }}
-          브랜치: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
-          PR 작성자: ${{ steps.pr.outputs.author }}
-          리뷰어: $REVIEWER_TEXT
-          링크: ${{ steps.pr.outputs.pr_url }}
-          EOF
-          )
+          pr_body=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
+
+          issues=$(echo "$pr_body" | grep -oiE '\bclose[sd]?[[:space:]]+#[0-9]+' | grep -oE '#[0-9]+' | sort -u)
+
+          if [ -z "$issues" ]; then
+            issue_text="없음"
+          else
+            issue_text=""
+            for issue in $issues; do
+              num=$(echo "$issue" | tr -d '#')
+              state=$(curl -s \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/issues/$num" | jq -r '.state')
+
+              if [ "$state" = "open" ]; then emoji="🟢"; else emoji="⚫"; fi
+
+              line="$emoji <https://github.com/${{ github.repository }}/issues/$num|#$num>"
+
+              if [ -z "$issue_text" ]; then
+                issue_text="$line"
+              else
+                issue_text="$issue_text\n$line"
+              fi
+            done
+          fi
+
+          summary=$(echo "$pr_body" | grep -E '^- ' | head -n 1 | sed 's/^- //')
+          [ -z "$summary" ] && summary="요약 없음"
+
+          title_link="<${{ steps.pr.outputs.pr_url }}|#${{ steps.pr.outputs.pr_number }} ${{ steps.pr.outputs.pr_title }}>"
+
+          text="[PR] $title_link\n\n🔥 연관 이슈\n$issue_text\n\n📝 작업 요약\n$summary\n\n👤 작성자: ${{ steps.pr.outputs.author }}\n🌿 브랜치: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}\n👀 리뷰어: $reviewer_text"
 
           RESP=$(curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
-            -H "Content-Type: application/json; charset=utf-8" \
-            --data "$(jq -n \
-              --arg channel "${{ secrets.SLACK_CHANNEL_ID }}" \
-              --arg text "$TEXT" \
-              '{channel:$channel,text:$text,unfurl_links:false,unfurl_media:false}')")
+            -H "Content-Type: application/json" \
+            --data "$(jq -n --arg channel "${{ secrets.SLACK_CHANNEL_ID }}" --arg text "$text" '{channel:$channel,text:$text,unfurl_links:false,unfurl_media:false}')")
 
-          OK=$(echo "$RESP" | jq -r '.ok')
-          if [ "$OK" != "true" ]; then
-            echo "Slack post failed"
-            echo "$RESP"
-            exit 1
-          fi
+          echo "$RESP"
 
-          TS=$(echo "$RESP" | jq -r '.ts')
-          echo "ts=$TS" >> "$GITHUB_OUTPUT"
+          ts=$(echo "$RESP" | jq -r '.ts')
+          echo "ts=$ts" >> "$GITHUB_OUTPUT"
 
-      - name: Save Slack ts into PR comment
+      - name: Save Slack ts
         if: steps.post_parent.outputs.ts != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
           BODY="<!-- slack-pr-bot: {\"channel\":\"${{ secrets.SLACK_CHANNEL_ID }}\",\"ts\":\"${{ steps.post_parent.outputs.ts }}\"} -->"
 
           curl -s -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ steps.pr.outputs.pr_number }}/comments" \
             -d "$(jq -n --arg body "$BODY" '{body:$body}')"
 
-      - name: Update parent Slack message
+      - name: Reply thread
         if: github.event.action != 'opened' && steps.find_ts.outputs.ts != ''
-        shell: bash
-        run: |
-          CHANNEL_ID="${{ steps.find_ts.outputs.channel }}"
-          PARENT_TS="${{ steps.find_ts.outputs.ts }}"
-
-          mention_slack_user() {
-            local github_id="$1"
-            local slack_id
-            slack_id=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$github_id" '.[$id] // empty')
-
-            if [ -n "$slack_id" ]; then
-              echo "<@$slack_id>"
-            else
-              echo "@$github_id"
-            fi
-          }
-
-          REVIEWERS=$(jq -r '.pull_request.requested_reviewers[]?.login' "$GITHUB_EVENT_PATH")
-
-          REVIEWER_TEXT=""
-          if [ -z "$REVIEWERS" ]; then
-            REVIEWER_TEXT="없음"
-          else
-            while IFS= read -r reviewer; do
-              [ -z "$reviewer" ] && continue
-              USER_MENTION=$(mention_slack_user "$reviewer")
-              if [ -z "$REVIEWER_TEXT" ]; then
-                REVIEWER_TEXT="$USER_MENTION"
-              else
-                REVIEWER_TEXT="$REVIEWER_TEXT, $USER_MENTION"
-              fi
-            done <<< "$REVIEWERS"
-          fi
-
-          TEXT=$(cat <<EOF
-          [PR] #${{ steps.pr.outputs.pr_number }} ${{ steps.pr.outputs.pr_title }}
-          branch: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
-          PR 작성자: ${{ steps.pr.outputs.author }}
-          리뷰어: $REVIEWER_TEXT
-          github: ${{ steps.pr.outputs.pr_url }}
-          EOF
-          )
-
-          RESP=$(curl -s -X POST https://slack.com/api/chat.update \
-            -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
-            -H "Content-Type: application/json; charset=utf-8" \
-            --data "$(jq -n \
-              --arg channel "$CHANNEL_ID" \
-              --arg ts "$PARENT_TS" \
-              --arg text "$TEXT" \
-              '{channel:$channel,ts:$ts,text:$text,unfurl_links:false,unfurl_media:false}')")
-
-          OK=$(echo "$RESP" | jq -r '.ok')
-          if [ "$OK" != "true" ]; then
-            echo "Slack update failed"
-            echo "$RESP"
-            exit 1
-          fi
-
-      - name: Reply to thread
-        if: github.event.action != 'opened' && steps.find_ts.outputs.ts != ''
-        shell: bash
         run: |
           THREAD_TS="${{ steps.find_ts.outputs.ts }}"
           CHANNEL_ID="${{ steps.find_ts.outputs.channel }}"
           ACTION="${{ steps.pr.outputs.action }}"
           MERGED="${{ steps.pr.outputs.merged }}"
 
-          mention_slack_user() {
-            local github_id="$1"
-            local slack_id
-            slack_id=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$github_id" '.[$id] // empty')
-
-            if [ -n "$slack_id" ]; then
-              echo "<@$slack_id>"
-            else
-              echo "@$github_id"
-            fi
+          mention() {
+            id="$1"
+            sid=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$id" '.[$id] // empty')
+            if [ -n "$sid" ]; then echo "<@$sid>"; else echo "@$id"; fi
           }
 
-          TEXT=""
-
           if [ "$ACTION" = "ready_for_review" ]; then
-            TEXT="👀 Draft 해제됨. 리뷰 가능한 상태입니다."
+            TEXT="👀 Draft 해제됨"
           elif [ "$ACTION" = "review_requested" ]; then
-            REQUESTED_REVIEWER=$(jq -r '.requested_reviewer.login // ""' "$GITHUB_EVENT_PATH")
-            if [ -n "$REQUESTED_REVIEWER" ]; then
-              TEXT="🙋 리뷰 요청됨: $(mention_slack_user "$REQUESTED_REVIEWER")"
-            else
-              TEXT="🙋 리뷰 요청됨"
-            fi
+            r=$(jq -r '.requested_reviewer.login // ""' "$GITHUB_EVENT_PATH")
+            TEXT="🙋 리뷰 요청됨: $(mention "$r")"
           elif [ "$ACTION" = "review_request_removed" ]; then
-            REMOVED_REVIEWER=$(jq -r '.requested_reviewer.login // ""' "$GITHUB_EVENT_PATH")
-            if [ -n "$REMOVED_REVIEWER" ]; then
-              TEXT="➖ 리뷰 요청 해제됨: $(mention_slack_user "$REMOVED_REVIEWER")"
-            else
-              TEXT="➖ 리뷰 요청이 해제되었습니다."
-            fi
+            r=$(jq -r '.requested_reviewer.login // ""' "$GITHUB_EVENT_PATH")
+            TEXT="➖ 리뷰 요청 해제됨: $(mention "$r")"
           elif [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
-            TEXT="✅ PR #${{ steps.pr.outputs.pr_number }} 머지 완료: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}"
-          elif [ "$ACTION" = "closed" ] && [ "$MERGED" != "true" ]; then
-            TEXT="🗑️ PR #${{ steps.pr.outputs.pr_number }} 이 머지 없이 닫혔습니다: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}"
+            TEXT="✅ 머지 완료: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}"
+          elif [ "$ACTION" = "closed" ]; then
+            TEXT="🗑️ 머지 없이 종료됨"
           else
-            echo "No message needed."
             exit 0
           fi
 
-          RESP=$(curl -s -X POST https://slack.com/api/chat.postMessage \
+          curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
-            -H "Content-Type: application/json; charset=utf-8" \
+            -H "Content-Type: application/json" \
             --data "$(jq -n \
               --arg channel "$CHANNEL_ID" \
               --arg text "$TEXT" \
               --arg thread_ts "$THREAD_TS" \
-              '{channel:$channel,text:$text,thread_ts:$thread_ts,reply_broadcast:false,unfurl_links:false,unfurl_media:false}')")
-
-          OK=$(echo "$RESP" | jq -r '.ok')
-          if [ "$OK" != "true" ]; then
-            echo "Slack reply failed"
-            echo "$RESP"
-            exit 1
-          fi
+              '{channel:$channel,text:$text,thread_ts:$thread_ts,unfurl_links:false,unfurl_media:false}')"
