@@ -158,11 +158,11 @@ public class OcrController {
     }
 
     private static byte[] decodeBase64Image(String raw) {
-        String s = raw.trim();
-        int comma = s.indexOf(',');
-        if (s.startsWith("data:") && comma > 0) {
-            s = s.substring(comma + 1);
+        String str = raw.trim();
+        int comma = str.indexOf(',');
+        if (str.startsWith("data:") && comma > 0) {
+            str = str.substring(comma + 1);
         }
-        return Base64.getDecoder().decode(s);
+        return Base64.getDecoder().decode(str);
     }
 }
