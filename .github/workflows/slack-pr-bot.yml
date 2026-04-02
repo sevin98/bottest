@@ -362,13 +362,13 @@ jobs:
 
           TEXT=$(cat <<EOF
           [PR] $TITLE_LINK
-
+          
           🔥 연관 이슈
           $ISSUE_TEXT
-
+          
           📝 작업 요약
           $SUMMARY
-
+          
           Author: ${{ steps.pr.outputs.author }}
           Branch: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
           Reviewer: $REVIEWER_TEXT
