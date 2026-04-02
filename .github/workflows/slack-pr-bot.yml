@@ -91,67 +91,65 @@ jobs:
           링크: ${{ steps.pr.outputs.pr_url }}
           EOF
           )
-  
+
           RESP=$(curl -s -X POST https://slack.com/api/chat.postMessage \
-          -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
-          -H "Content-Type: application/json; charset=utf-8" \
-          --data "$(jq -n \
-          --arg channel "${{ secrets.SLACK_CHANNEL_ID }}" \
-          --arg text "$TEXT" \
-          '{channel:$channel,text:$text}')")
-  
-          echo "$RESP"
-  
+            -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            --data "$(jq -n \
+              --arg channel "${{ secrets.SLACK_CHANNEL_ID }}" \
+              --arg text "$TEXT" \
+              '{channel:$channel,text:$text}')")
+
           OK=$(echo "$RESP" | jq -r '.ok')
           if [ "$OK" != "true" ]; then
-          echo "Slack post failed"
-          exit 1
+            echo "Slack post failed"
+            exit 1
           fi
-  
+
           TS=$(echo "$RESP" | jq -r '.ts')
           echo "ts=$TS" >> $GITHUB_OUTPUT
 
-          - name: Save Slack ts into PR comment
-            if: github.event.action == 'opened' && steps.find_ts.outputs.ts == ''
-            env:
-              GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            shell: bash
-            run: |
-            BODY="<!-- slack-pr-bot: {\"channel\":\"${{ secrets.SLACK_CHANNEL_ID }}\",\"ts\":\"${{ steps.post_parent.outputs.ts }}\"} -->"
-    
-            curl -s -X POST \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/${{ steps.pr.outputs.pr_number }}/comments" \
-              -d "$(jq -n --arg body "$BODY" '{body:$body}')"
+      - name: Save Slack ts into PR comment
+        if: github.event.action == 'opened' && steps.find_ts.outputs.ts == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          BODY="<!-- slack-pr-bot: {\"channel\":\"${{ secrets.SLACK_CHANNEL_ID }}\",\"ts\":\"${{ steps.post_parent.outputs.ts }}\"} -->"
 
-          - name: Reply to thread
-            if: github.event.action != 'opened'
-            shell: bash
-            run: |
-            THREAD_TS="${{ steps.find_ts.outputs.ts }}"
-            CHANNEL_ID="${{ steps.find_ts.outputs.channel }}"
-            ACTION="${{ steps.pr.outputs.action }}"
-            MERGED="${{ steps.pr.outputs.merged }}"
-    
-            if [ -z "$THREAD_TS" ]; then
+          curl -s -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ steps.pr.outputs.pr_number }}/comments" \
+            -d "$(jq -n --arg body "$BODY" '{body:$body}')"
+
+      - name: Reply to thread
+        if: github.event.action != 'opened'
+        shell: bash
+        run: |
+          THREAD_TS="${{ steps.find_ts.outputs.ts }}"
+          CHANNEL_ID="${{ steps.find_ts.outputs.channel }}"
+          ACTION="${{ steps.pr.outputs.action }}"
+          MERGED="${{ steps.pr.outputs.merged }}"
+
+          if [ -z "$THREAD_TS" ]; then
             echo "No thread ts found. Skip."
             exit 0
-            fi
-    
-            TEXT=""
-    
-            if [ "$ACTION" = "ready_for_review" ]; then
+          fi
+
+          TEXT=""
+
+          if [ "$ACTION" = "ready_for_review" ]; then
             TEXT="👀 Draft 해제됨. 리뷰 가능한 상태입니다."
-            elif [ "$ACTION" = "review_requested" ]; then
+          elif [ "$ACTION" = "review_requested" ]; then
             TEXT="🙋 리뷰 요청됨: ${{ steps.pr.outputs.reviewers }}"
-            elif [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
+          elif [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
             TEXT="✅ PR이 머지되었습니다."
-            else
-              echo "No message needed."
-              exit 0
-              fi
-    
+          else
+            echo "No message needed."
+            exit 0
+          fi
+
           curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
             -H "Content-Type: application/json; charset=utf-8" \
