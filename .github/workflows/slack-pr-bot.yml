@@ -1,0 +1,21 @@
+name: Slack PR Bot Test
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  test-slack:
+    runs-on: ubuntu-latest
+    environment: SLACK_BOT_TOKEN
+
+    steps:
+      - name: Send test message to Slack
+        run: |
+          curl -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer ${{ secrets.SLACK_BOT_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{
+              "channel": "'${{ secrets.SLACK_CHANNEL_ID }}'",
+              "text": "PR opened 테스트 메시지"
+            }'
