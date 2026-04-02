@@ -19,6 +19,8 @@ jobs:
   notify-slack:
     runs-on: ubuntu-latest
     environment: SLACK_BOT_TOKEN
+    env:
+      SLACK_USER_MAP: '{"m-a-king":"U0AKAEF2K9U","1o18z":"U0AKQ6G8BT3","sevin98":"U0AK6U2J62F"}'
 
     steps:
       - name: Extract PR data
@@ -35,14 +37,6 @@ jobs:
           BASE_REF="${{ github.event.pull_request.base.ref }}"
           HEAD_REF="${{ github.event.pull_request.head.ref }}"
 
-          PR_BODY=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")
-
-          REVIEWERS=$(jq -r '[.pull_request.requested_reviewers[]?.login] | join(", ")' "$GITHUB_EVENT_PATH")
-          if [ -z "$REVIEWERS" ]; then REVIEWERS="없음"; fi
-
-          SUMMARY=$(echo "$PR_BODY" | sed '/^\s*$/d' | head -n 1)
-          if [ -z "$SUMMARY" ]; then SUMMARY="요약 없음"; fi
-
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
           echo "pr_title<<EOF" >> "$GITHUB_OUTPUT"
@@ -56,14 +50,6 @@ jobs:
           echo "is_draft=$IS_DRAFT" >> "$GITHUB_OUTPUT"
           echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
-
-          echo "reviewers<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$REVIEWERS" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$SUMMARY" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Find existing Slack ts from PR comments
         id: find_ts
@@ -84,18 +70,26 @@ jobs:
           echo "ts=$TS" >> "$GITHUB_OUTPUT"
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
 
-      - name: Post parent message on opened
-        if: github.event.action == 'opened' && steps.find_ts.outputs.ts == ''
+      - name: Post parent message
+        if: |
+          steps.find_ts.outputs.ts == '' &&
+          (
+            (github.event.action == 'opened' && github.event.pull_request.draft == false) ||
+            github.event.action == 'ready_for_review'
+          )
         id: post_parent
         shell: bash
         run: |
           mention_slack_user() {
-            case "$1" in
-              m-a-king) echo "<@U0AKAEF2K9U>" ;;
-              1o18z) echo "<@U0AKQ6G8BT3>" ;;
-              sevin98) echo "<@U0AK6U2J62F>" ;;
-              *) echo "$1" ;;
-            esac
+            local github_id="$1"
+            local slack_id
+            slack_id=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$github_id" '.[$id] // empty')
+
+            if [ -n "$slack_id" ]; then
+              echo "<@$slack_id>"
+            else
+              echo "@$github_id"
+            fi
           }
 
           REVIEWERS=$(jq -r '.pull_request.requested_reviewers[]?.login' "$GITHUB_EVENT_PATH")
@@ -112,9 +106,7 @@ jobs:
               else
                 REVIEWER_TEXT="$REVIEWER_TEXT, $USER_MENTION"
               fi
-            done <<EOF
-          $REVIEWERS
-          EOF
+            done <<< "$REVIEWERS"
           fi
 
           TEXT=$(cat <<EOF
@@ -122,7 +114,6 @@ jobs:
           브랜치: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
           PR 작성자: ${{ steps.pr.outputs.author }}
           리뷰어: $REVIEWER_TEXT
-          요약: ${{ steps.pr.outputs.summary }}
           링크: ${{ steps.pr.outputs.pr_url }}
           EOF
           )
@@ -133,7 +124,7 @@ jobs:
             --data "$(jq -n \
               --arg channel "${{ secrets.SLACK_CHANNEL_ID }}" \
               --arg text "$TEXT" \
-              '{channel:$channel,text:$text}')")
+              '{channel:$channel,text:$text,unfurl_links:false,unfurl_media:false}')")
 
           OK=$(echo "$RESP" | jq -r '.ok')
           if [ "$OK" != "true" ]; then
@@ -146,7 +137,7 @@ jobs:
           echo "ts=$TS" >> "$GITHUB_OUTPUT"
 
       - name: Save Slack ts into PR comment
-        if: github.event.action == 'opened' && steps.find_ts.outputs.ts == ''
+        if: steps.post_parent.outputs.ts != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -167,12 +158,15 @@ jobs:
           PARENT_TS="${{ steps.find_ts.outputs.ts }}"
 
           mention_slack_user() {
-            case "$1" in
-              m-a-king) echo "<@U0AKAEF2K9U>" ;;
-              1o18z) echo "<@U0AKQ6G8BT3>" ;;
-              sevin98) echo "<@U0AK6U2J62F>" ;;
-              *) echo "$1" ;;
-            esac
+            local github_id="$1"
+            local slack_id
+            slack_id=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$github_id" '.[$id] // empty')
+
+            if [ -n "$slack_id" ]; then
+              echo "<@$slack_id>"
+            else
+              echo "@$github_id"
+            fi
           }
 
           REVIEWERS=$(jq -r '.pull_request.requested_reviewers[]?.login' "$GITHUB_EVENT_PATH")
@@ -189,18 +183,15 @@ jobs:
               else
                 REVIEWER_TEXT="$REVIEWER_TEXT, $USER_MENTION"
               fi
-            done <<EOF
-          $REVIEWERS
-          EOF
+            done <<< "$REVIEWERS"
           fi
 
           TEXT=$(cat <<EOF
           [PR] #${{ steps.pr.outputs.pr_number }} ${{ steps.pr.outputs.pr_title }}
-          브랜치: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
+          branch: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}
           PR 작성자: ${{ steps.pr.outputs.author }}
           리뷰어: $REVIEWER_TEXT
-          요약: ${{ steps.pr.outputs.summary }}
-          링크: ${{ steps.pr.outputs.pr_url }}
+          github: ${{ steps.pr.outputs.pr_url }}
           EOF
           )
 
@@ -211,7 +202,7 @@ jobs:
               --arg channel "$CHANNEL_ID" \
               --arg ts "$PARENT_TS" \
               --arg text "$TEXT" \
-              '{channel:$channel,ts:$ts,text:$text}')")
+              '{channel:$channel,ts:$ts,text:$text,unfurl_links:false,unfurl_media:false}')")
 
           OK=$(echo "$RESP" | jq -r '.ok')
           if [ "$OK" != "true" ]; then
@@ -221,7 +212,7 @@ jobs:
           fi
 
       - name: Reply to thread
-        if: github.event.action != 'opened'
+        if: github.event.action != 'opened' && steps.find_ts.outputs.ts != ''
         shell: bash
         run: |
           THREAD_TS="${{ steps.find_ts.outputs.ts }}"
@@ -229,18 +220,16 @@ jobs:
           ACTION="${{ steps.pr.outputs.action }}"
           MERGED="${{ steps.pr.outputs.merged }}"
 
-          if [ -z "$THREAD_TS" ]; then
-            echo "No thread ts found. Skip."
-            exit 0
-          fi
-
           mention_slack_user() {
-            case "$1" in
-              m-a-king) echo "<@U0AKAEF2K9U>" ;;
-              1o18z) echo "<@U0AKQ6G8BT3>" ;;
-              sevin98) echo "<@U0AK6U2J62F>" ;;
-              *) echo "$1" ;;
-            esac
+            local github_id="$1"
+            local slack_id
+            slack_id=$(echo "$SLACK_USER_MAP" | jq -r --arg id "$github_id" '.[$id] // empty')
+
+            if [ -n "$slack_id" ]; then
+              echo "<@$slack_id>"
+            else
+              echo "@$github_id"
+            fi
           }
 
           TEXT=""
@@ -263,6 +252,8 @@ jobs:
             fi
           elif [ "$ACTION" = "closed" ] && [ "$MERGED" = "true" ]; then
             TEXT="✅ PR #${{ steps.pr.outputs.pr_number }} 머지 완료: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}"
+          elif [ "$ACTION" = "closed" ] && [ "$MERGED" != "true" ]; then
+            TEXT="🗑️ PR #${{ steps.pr.outputs.pr_number }} 이 머지 없이 닫혔습니다: ${{ steps.pr.outputs.head_ref }} -> ${{ steps.pr.outputs.base_ref }}"
           else
             echo "No message needed."
             exit 0
@@ -275,7 +266,7 @@ jobs:
               --arg channel "$CHANNEL_ID" \
               --arg text "$TEXT" \
               --arg thread_ts "$THREAD_TS" \
-              '{channel:$channel,text:$text,thread_ts:$thread_ts,reply_broadcast:false}')")
+              '{channel:$channel,text:$text,thread_ts:$thread_ts,reply_broadcast:false,unfurl_links:false,unfurl_media:false}')")
 
           OK=$(echo "$RESP" | jq -r '.ok')
           if [ "$OK" != "true" ]; then
